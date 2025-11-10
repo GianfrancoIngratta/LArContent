@@ -1145,6 +1145,8 @@ float StitchingCosmicRayMergingTool::GetSignedX0(const ParticleFlowObject *const
 {
   // get stitching vertex for the pfo to be shifted
     const PfoToPointingVertexMatrix::const_iterator pfoToPointingVertexMatrixIter(pfoToPointingVertexMatrix.find(pPfoToShift));
+    if (pfoToPointingVertexMatrix.end() == pfoToPointingVertexMatrixIter || !pfoToPointingVertexMatrixIter->second.count(pMatchedPfo))
+        return;
     const LArPointingCluster::Vertex stitchingVertex(pfoToPointingVertexMatrixIter->second.at(pMatchedPfo));
 
     const LArTPC *const pShiftLArTPC(pfoToLArTPCMap.at(pPfoToShift));
