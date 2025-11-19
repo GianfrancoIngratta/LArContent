@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <ostream>
 
 #include "larpandoracontent/LArControlFlow/StitchingCosmicRayMergingTool.h"
 
@@ -47,6 +48,10 @@ StitchingCosmicRayMergingTool::StitchingCosmicRayMergingTool() :
 {
 }
 
+std::ofstream StitchingCosmicRayMergingTool::prestitching_pfoinfo_file("prestitching_pfoinfo_file.txt");
+std::ofstream StitchingCosmicRayMergingTool::poststitching_pfoinfo_file("poststitching_pfoinfo_file.txt");
+int StitchingCosmicRayMergingTool::CALL_NUMBER(0);
+
 void StitchingCosmicRayMergingTool::Run(const MasterAlgorithm *const pAlgorithm, const PfoList *const pMultiPfoList,
     PfoToLArTPCMap &pfoToLArTPCMap, PfoToFloatMap &stitchedPfosToX0Map)
 {
@@ -67,6 +72,10 @@ void StitchingCosmicRayMergingTool::Run(const MasterAlgorithm *const pAlgorithm,
 
     LArTPCToPfoMap larTPCToPfoMap;
     this->BuildTPCMaps(primaryPfos, pfoToLArTPCMap, larTPCToPfoMap);
+
+    // PRINT PFO INFO PRE-STITCHING
+    StitchingCosmicRayMergingTool::CALL_NUMBER++;
+    this->PrintPfoInfo(larTPCToPfoMap, pointingClusterMap);
 
     // group pfos that match along Z direction across detector boundaries for Z stitching (applied inside StitchPfo)
     std::vector<PfoVector> pfosGroupedAlongZ;
@@ -99,8 +108,254 @@ void StitchingCosmicRayMergingTool::Run(const MasterAlgorithm *const pAlgorithm,
     this->OrderPfoMerges(pfoToLArTPCMap, pointingClusterMap, pfoSelectedMerges, pfoOrderedMerges);
 
     this->StitchPfos(pAlgorithm, pointingClusterMap, pfoOrderedMerges, pfoToLArTPCMap, stitchedPfosToX0Map, pfosGroupedAlongZ);
+
+    // PRINT PFO INFO POST-STITCHING
+    this->PrintPfoInfo(stitchedPfosToX0Map);
 }
 
+//------------------------------------------------------------------------------------------------------------------------------------------
+void StitchingCosmicRayMergingTool::PrintPfoInfo(const PfoToFloatMap& stitchedPfosToX0Map) const
+{
+      
+  if(!poststitching_pfoinfo_file.is_open())
+  {
+    std::cout << "Warning: prestitching_pfoinfo_file not open \n";
+    return;
+  }
+
+  for (const auto & pair : stitchedPfosToX0Map) 
+  {
+    auto pfo = pair.first;
+    auto x0 = pair.second;
+
+    ClusterList clusters3D;
+    LArPfoHelper::GetThreeDClusterList(pfo, clusters3D);
+    auto nof_calohits = clusters3D.front()->GetNCaloHits();
+    
+    if (clusters3D.empty()  || (nof_calohits < 5)) continue;
+
+    const LArTPC *const pFirstLArTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
+
+    const ThreeDSlidingFitResult slidingFitResult(clusters3D.front(), 5, pFirstLArTPC->GetWirePitchW());
+    
+    CartesianVector end_point1 = slidingFitResult.GetGlobalMinLayerPosition();
+    CartesianVector end_point2 = slidingFitResult.GetGlobalMaxLayerPosition();
+
+    // MC INFO *************************************
+
+    CaloHitList caloHitList3D;
+    LArPfoHelper::GetCaloHits(pfo, TPC_3D, caloHitList3D);
+
+    Uid the_main = nullptr;
+    float the_main_vertexX = -999.;
+    float the_main_vertexY = -999.;
+    float the_main_vertexZ = -999.;
+
+    std::map<Uid, int> MCParticleToHitCounter;
+    std::map<Uid, float> MCParticleToVertexX;
+    std::map<Uid, float> MCParticleToVertexY;
+    std::map<Uid, float> MCParticleToVertexZ;
+
+    for (const auto& hit : caloHitList3D)
+    {
+      // mc particle -> contribution to the hit
+      auto map = hit->GetMCParticleWeightMap();
+      float max_contrib = 0.;
+
+      Uid mc_max_contrib;
+      float vertexX_mc_max_contrib = -999.;
+      float vertexY_mc_max_contrib = -999.;
+      float vertexZ_mc_max_contrib = -999.;
+
+      for(auto const &[this_mc, contrib] : map)
+      {
+       if(max_contrib < contrib) {
+         mc_max_contrib = this_mc->GetUid();
+         vertexX_mc_max_contrib = this_mc->GetVertex().GetX();
+         vertexY_mc_max_contrib = this_mc->GetVertex().GetY();
+         vertexZ_mc_max_contrib = this_mc->GetVertex().GetZ();
+         max_contrib = contrib;
+       }
+      }
+       // at the end of this loop we know the mc particle
+       // that constribuited the most to this hit and 
+       // store its relevant info
+      if(MCParticleToHitCounter.count(mc_max_contrib)==0)
+      {
+        MCParticleToHitCounter[mc_max_contrib] = 0;
+        MCParticleToVertexX[mc_max_contrib] = vertexX_mc_max_contrib;
+        MCParticleToVertexY[mc_max_contrib] = vertexY_mc_max_contrib;
+        MCParticleToVertexZ[mc_max_contrib] = vertexZ_mc_max_contrib;
+      }
+      MCParticleToHitCounter[mc_max_contrib]++; 
+    }
+
+    int max_counts = 0;
+    // find the mc particle that cosntriuited the most
+    // to all pfo hits
+    for (auto const &[mc_uid, counts] : MCParticleToHitCounter)
+    {
+      if(counts > max_counts)
+      {
+        the_main = mc_uid;
+        the_main_vertexX = MCParticleToVertexX[mc_uid];
+        the_main_vertexY = MCParticleToVertexY[mc_uid];
+        the_main_vertexZ = MCParticleToVertexZ[mc_uid];
+        max_counts = counts;
+      }
+    }
+
+    // MC INFO *************************************
+    
+    poststitching_pfoinfo_file
+      << "{ \"CALL\" : " << CALL_NUMBER
+      << ", \"mc_particle_uid\" : " << "\"" << the_main << "\""
+      << ", \"mc_vertex_x\" : " << the_main_vertexX
+      << ", \"mc_vertex_y\" : " << the_main_vertexY
+      << ", \"mc_vertex_z\" : " << the_main_vertexZ
+      << ", \"pfo\" : " << "\"" << pfo << "\""
+      << ", \"x0\" : " << x0
+      << ", \"nof_calohits\" : " << nof_calohits
+      << ", \"end_point1_x\" : " << end_point1.GetX()
+      << ", \"end_point1_y\" : " << end_point1.GetY()
+      << ", \"end_point1_z\" : " << end_point1.GetZ()
+      << ", \"end_point2_x\" : " << end_point2.GetX()
+      << ", \"end_point2_y\" : " << end_point2.GetY()
+      << ", \"end_point2_z\" : " << end_point2.GetZ()
+      << "},\n";
+  }
+}
+
+//------------------------------------------------------------------------------------------------------------------------------------------
+void StitchingCosmicRayMergingTool::PrintPfoInfo(const LArTPCToPfoMap& larTPCToPfoMap, const ThreeDPointingClusterMap& pointingClusterMap) const 
+{
+      
+  if(!prestitching_pfoinfo_file.is_open())
+  {
+    std::cout << "Warning: prestitching_pfoinfo_file not open \n";
+    return;
+  }
+
+  for (const auto & pair : larTPCToPfoMap)
+  {
+    auto tpc = pair.first->GetLArTPCVolumeId();
+    for (const auto &pfo_in_TPC : pair.second)
+    {
+      ThreeDPointingClusterMap::const_iterator iter1 = pointingClusterMap.find(pfo_in_TPC);
+      if (iter1 == pointingClusterMap.end() ) continue;
+      
+      const LArPointingCluster &pointingCluster(iter1->second);
+      
+      const LArPointingCluster::Vertex inner = pointingCluster.GetInnerVertex();
+      const LArPointingCluster::Vertex outer = pointingCluster.GetOuterVertex();
+      
+      auto pfo_in_TPC_vertex = pfo_in_TPC->GetVertexList().begin();
+      if (pfo_in_TPC_vertex == pfo_in_TPC->GetVertexList().end()) continue;
+      
+      ClusterList clusters3D;
+      LArPfoHelper::GetThreeDClusterList(pfo_in_TPC, clusters3D);
+      auto nof_calohits = clusters3D.front()->GetNCaloHits(); 
+      
+      const pandora::Vertex *vertex = *pfo_in_TPC_vertex;
+      double vertexX = vertex->GetPosition().GetX();
+      double vertexY = vertex->GetPosition().GetY();
+      double vertexZ = vertex->GetPosition().GetZ();
+      double innerX  = inner.GetPosition().GetX();
+      double innerY  = inner.GetPosition().GetY();
+      double innerZ  = inner.GetPosition().GetZ();
+      double outerX  = outer.GetPosition().GetX();
+      double outerY  = outer.GetPosition().GetY();
+      double outerZ  = outer.GetPosition().GetZ();
+      
+      // MC INFO *************************************
+
+      CaloHitList caloHitList3D;
+      LArPfoHelper::GetCaloHits(pfo_in_TPC, TPC_3D, caloHitList3D);
+
+      Uid the_main = nullptr;
+      float the_main_vertexX = -999.;
+      float the_main_vertexY = -999.;
+      float the_main_vertexZ = -999.;
+
+      std::map<Uid, int> MCParticleToHitCounter;
+      std::map<Uid, float> MCParticleToVertexX;
+      std::map<Uid, float> MCParticleToVertexY;
+      std::map<Uid, float> MCParticleToVertexZ;
+
+      for (const auto& hit : caloHitList3D)
+      {
+        // mc particle -> contribution to the hit
+        auto map = hit->GetMCParticleWeightMap();
+        float max_contrib = 0.;
+
+        Uid mc_max_contrib;
+        float vertexX_mc_max_contrib = -999.;
+        float vertexY_mc_max_contrib = -999.;
+        float vertexZ_mc_max_contrib = -999.;
+
+        for(auto const &[this_mc, contrib] : map)
+        {
+         if(max_contrib < contrib) {
+           mc_max_contrib = this_mc->GetUid();
+           vertexX_mc_max_contrib = this_mc->GetVertex().GetX();
+           vertexY_mc_max_contrib = this_mc->GetVertex().GetY();
+           vertexZ_mc_max_contrib = this_mc->GetVertex().GetZ();
+           max_contrib = contrib;
+         }
+        }
+         // at the end of this loop we know the mc particle
+         // that constribuited the most to this hit and 
+         // store its relevant info
+        if(MCParticleToHitCounter.count(mc_max_contrib)==0)
+        {
+          MCParticleToHitCounter[mc_max_contrib] = 0;
+          MCParticleToVertexX[mc_max_contrib] = vertexX_mc_max_contrib;
+          MCParticleToVertexY[mc_max_contrib] = vertexY_mc_max_contrib;
+          MCParticleToVertexZ[mc_max_contrib] = vertexZ_mc_max_contrib;
+        }
+        MCParticleToHitCounter[mc_max_contrib]++; 
+      }
+
+      int max_counts = 0;
+      // find the mc particle that cosntriuited the most
+      // to all pfo hits
+      for (auto const &[mc_uid, counts] : MCParticleToHitCounter)
+      {
+        if(counts > max_counts)
+        {
+          the_main = mc_uid;
+          the_main_vertexX = MCParticleToVertexX[mc_uid];
+          the_main_vertexY = MCParticleToVertexY[mc_uid];
+          the_main_vertexZ = MCParticleToVertexZ[mc_uid];
+          max_counts = counts;
+        }
+      }
+
+      // MC INFO *************************************
+      
+      prestitching_pfoinfo_file
+        << "{ \"CALL\" : " << CALL_NUMBER
+        << ", \"tpc\" : " << "\"" << tpc << "\""
+        << ", \"pfo\" : " << "\"" << pfo_in_TPC << "\""
+        << ", \"nof_calohits\" : " << nof_calohits
+        << ", \"mc_particle_uid\" : " << "\"" << the_main << "\""
+        << ", \"mc_vertex_x\" : " << the_main_vertexX
+        << ", \"mc_vertex_y\" : " << the_main_vertexY
+        << ", \"mc_vertex_z\" : " << the_main_vertexZ
+        << ", \"vertexX\" : " << vertexX
+        << ", \"vertexY\" : " << vertexY
+        << ", \"vertexZ\" : " << vertexZ
+        << ", \"innerX\" : " << innerX
+        << ", \"innerY\" : " << innerY
+        << ", \"innerZ\" : " << innerZ
+        << ", \"outerX\" : " << outerX
+        << ", \"outerY\" : " << outerY
+        << ", \"outerZ\" : " << outerZ
+        << "},\n";
+    }
+
+  }
+}
 //------------------------------------------------------------------------------------------------------------------------------------------
 
 void StitchingCosmicRayMergingTool::SelectPrimaryPfos(const PfoList *pInputPfoList, const PfoToLArTPCMap &pfoToLArTPCMap, PfoList &outputPfoList) const
@@ -1128,10 +1383,10 @@ void StitchingCosmicRayMergingTool::StitchPfos(const MasterAlgorithm *const pAlg
             const ParticleFlowObject* pPfoToDelete = pfosGroupedAlongZ[i][j];
 
             pAlgorithm->StitchPfos(pPfoToEnlarge, pPfoToDelete, pfoToLArTPCMap);
-
             std::cout << "pfo " << pPfoToDelete << " deleted\n";
           }
           isZgroupStitched[i] = true;
+          stitchedPfosToX0Map.insert(PfoToFloatMap::value_type(pPfoToEnlarge, 0.));
         }
       }
     }

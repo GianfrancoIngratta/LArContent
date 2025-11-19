@@ -240,6 +240,8 @@ StatusCode MasterAlgorithm::CopyMCParticles() const
 {
     const MCParticleList *pMCParticleList(nullptr);
     PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraContentApi::GetList(*this, m_inputMCParticleListName, pMCParticleList));
+    std::cout << "m_inputMCParticleListName " << m_inputMCParticleListName << "\n";
+    std::cout << "MCParticleList size : " << pMCParticleList->size() << "\n";
 
     PandoraInstanceList pandoraWorkerInstances(m_crWorkerInstances);
     if (m_pSlicingWorkerInstance)

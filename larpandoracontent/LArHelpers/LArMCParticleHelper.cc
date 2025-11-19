@@ -607,21 +607,27 @@ void LArMCParticleHelper::GetMCParticleToCaloHitMatches(const CaloHitList *const
 void LArMCParticleHelper::SelectReconstructableMCParticles(const MCParticleList *pMCParticleList, const CaloHitList *pCaloHitList,
     const PrimaryParameters &parameters, std::function<bool(const MCParticle *const)> fCriteria, MCContributionMap &selectedMCParticlesToHitsMap)
 {
+    std::cout << "inside select reconstructable \n";
     // Obtain map: [mc particle -> target mc particle]
     LArMCParticleHelper::MCRelationMap mcToTargetMCMap;
     parameters.m_foldBackHierarchy ? LArMCParticleHelper::GetMCPrimaryMap(pMCParticleList, mcToTargetMCMap)
                                    : LArMCParticleHelper::GetMCToSelfMap(pMCParticleList, mcToTargetMCMap);
 
+    std::cout << "mcToTargetMCMap size " << mcToTargetMCMap.size() << "\n"; 
     // Remove non-reconstructable hits, e.g. those downstream of a neutron
     // Unless selectInputHits == false
     CaloHitList selectedCaloHitList;
     LArMCParticleHelper::SelectCaloHits(pCaloHitList, mcToTargetMCMap, selectedCaloHitList, parameters.m_selectInputHits, parameters.m_maxPhotonPropagation);
+
+    std::cout << "selectedCaloHitList " << selectedCaloHitList.size() << "\n";
 
     // Obtain maps: [hit -> target mc particle], [target mc particle -> list of hits]
     CaloHitToMCMap trueHitToTargetMCMap;
     MCContributionMap targetMCToTrueHitListMap;
     LArMCParticleHelper::GetMCParticleToCaloHitMatches(&selectedCaloHitList, mcToTargetMCMap, trueHitToTargetMCMap, targetMCToTrueHitListMap);
 
+    std::cout << "trueHitToTargetMCMap " << trueHitToTargetMCMap.size() << "\n";
+    std::cout << "targetMCToTrueHitListMap " << targetMCToTrueHitListMap.size() << "\n";
     // Obtain vector: target mc particles
     MCParticleVector targetMCVector;
     if (parameters.m_foldBackHierarchy)
@@ -632,11 +638,13 @@ void LArMCParticleHelper::SelectReconstructableMCParticles(const MCParticleList 
     {
         std::copy(pMCParticleList->begin(), pMCParticleList->end(), std::back_inserter(targetMCVector));
     }
+    std::cout << "targetMCVector " << targetMCVector.size() << "\n";
 
     // Select MCParticles matching criteria
     MCParticleVector candidateTargets;
     LArMCParticleHelper::SelectParticlesMatchingCriteria(targetMCVector, fCriteria, candidateTargets, parameters, false);
 
+    std::cout << "candidateTargets " << candidateTargets.size() << "\n",
     // Ensure the MCParticles have enough "good" hits to be reconstructed
     LArMCParticleHelper::SelectParticlesByHitCount(candidateTargets, targetMCToTrueHitListMap, mcToTargetMCMap, parameters, selectedMCParticlesToHitsMap);
 }
