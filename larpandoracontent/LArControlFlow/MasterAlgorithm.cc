@@ -26,6 +26,7 @@
 #include "larpandoracontent/LArPlugins/LArRotationalTransformationPlugin.h"
 
 #include "larpandoracontent/LArUtility/PfoMopUpBaseAlgorithm.h"
+#include <cstddef>
 
 using namespace pandora;
 
@@ -214,6 +215,8 @@ StatusCode MasterAlgorithm::InitializeWorkerInstances()
             m_crWorkerInstances.push_back(
                 this->CreateWorkerInstance(*(mapEntry.second), gapList, m_crSettingsFile, "CRWorkerInstance" + std::to_string(volumeId)));
         }
+        std::cout << "m_crWorkerInstances size : " << m_crWorkerInstances.size() << "\n";
+        throw "";
 
         if (m_shouldRunSlicing)
             m_pSlicingWorkerInstance = this->CreateWorkerInstance(larTPCMap, gapList, m_slicingSettingsFile, "SlicingWorker");
@@ -301,14 +304,19 @@ StatusCode MasterAlgorithm::RunCosmicRayReconstruction(const VolumeIdToHitListMa
 {
     unsigned int workerCounter(0);
 
+    std::cout << "*** Inside LArContent / RunCosmicRayReconstruction ***\n";
+
     for (const Pandora *const pCRWorker : m_crWorkerInstances)
     {
         const LArTPC &larTPC(pCRWorker->GetGeometry()->GetLArTPC());
         VolumeIdToHitListMap::const_iterator iter(volumeIdToHitListMap.find(larTPC.GetLArTPCVolumeId()));
+        std::cout << "new pCRWorker center = ("<< larTPC.GetCenterX() <<", " << larTPC.GetCenterY() << ", " <<larTPC.GetCenterZ() <<") \n";
+        std::cout << "new pCRWorker widths = ("<< larTPC.GetWidthX() <<", " << larTPC.GetWidthY() << ", " <<larTPC.GetWidthZ() <<") \n";
 
         if (volumeIdToHitListMap.end() == iter)
             continue;
 
+        std::cout << "pCRWorker number of calo hits " << iter->second.m_allHitList.size() << "\n";
         for (const CaloHit *const pCaloHit : iter->second.m_allHitList)
             PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->Copy(pCRWorker, pCaloHit));
 
@@ -325,11 +333,19 @@ StatusCode MasterAlgorithm::RunCosmicRayReconstruction(const VolumeIdToHitListMa
 
 StatusCode MasterAlgorithm::RecreateCosmicRayPfos(PfoToLArTPCMap &pfoToLArTPCMap) const
 {
+    int i = 0;
     for (const Pandora *const pCRWorker : m_crWorkerInstances)
     {
         const PfoList *pCRPfos(nullptr);
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, PandoraApi::GetCurrentPfoList(*pCRWorker, pCRPfos));
 
+        // auto workerTPC = pCRWorker->GetGeometry()->GetLArTPC();
+        const LArTPC &workerTPC(pCRWorker->GetGeometry()->GetLArTPC());
+        auto x = workerTPC.GetCenterX();
+        auto y = workerTPC.GetCenterY();
+        auto z = workerTPC.GetCenterZ();
+        std::cout << "WORKER NUMBER " << i << ", center (" << x <<", "<< y <<", "<< z <<")" <<"\n";
+        std::cout << "pCRPfos size " << pCRPfos->size() << "\n";
         PfoList newPfoList;
         PANDORA_RETURN_RESULT_IF(STATUS_CODE_SUCCESS, !=, this->Recreate(*pCRPfos, newPfoList));
 
@@ -337,6 +353,7 @@ StatusCode MasterAlgorithm::RecreateCosmicRayPfos(PfoToLArTPCMap &pfoToLArTPCMap
 
         for (const Pfo *const pNewPfo : newPfoList)
             pfoToLArTPCMap[pNewPfo] = &larTPC;
+        i++;
     }
 
     return STATUS_CODE_SUCCESS;
