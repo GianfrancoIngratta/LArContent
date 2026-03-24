@@ -310,7 +310,7 @@ StatusCode MasterAlgorithm::RunCosmicRayReconstruction(const VolumeIdToHitListMa
     {
         const LArTPC &larTPC(pCRWorker->GetGeometry()->GetLArTPC());
         VolumeIdToHitListMap::const_iterator iter(volumeIdToHitListMap.find(larTPC.GetLArTPCVolumeId()));
-        std::cout << "new pCRWorker center = ("<< larTPC.GetCenterX() <<", " << larTPC.GetCenterY() << ", " <<larTPC.GetCenterZ() <<") \n";
+        std::cout << "new pCRWorker center = ("<< larTPC.GetCenterX() <<", " << larTPC.GetCenterY() << ", " <<larTPC.GetCenterZ() <<"), volumeId = " << larTPC.GetLArTPCVolumeId() << " \n";
         std::cout << "new pCRWorker widths = ("<< larTPC.GetWidthX() <<", " << larTPC.GetWidthY() << ", " <<larTPC.GetWidthZ() <<") \n";
 
         if (volumeIdToHitListMap.end() == iter)

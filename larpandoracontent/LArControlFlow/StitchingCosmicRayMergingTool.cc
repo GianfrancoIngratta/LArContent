@@ -7,6 +7,7 @@
  */
 
 #include "Pandora/AlgorithmHeaders.h"
+#include "Pandora/PandoraInternal.h"
 
 #include "StitchingCosmicRayMergingTool.h"
 #include "larpandoracontent/LArHelpers/LArGeometryHelper.h"
