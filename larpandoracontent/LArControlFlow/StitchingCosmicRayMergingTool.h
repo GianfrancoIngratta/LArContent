@@ -32,6 +32,12 @@ public:
     void Run(const MasterAlgorithm *const pAlgorithm, const pandora::PfoList *const pMultiPfoList, PfoToLArTPCMap &pfoToLArTPCMap,
         PfoToFloatMap &stitchedPfosToX0Map);
 
+    // ** DEBUG/VALIDATION **
+    static std::ofstream prestitching_pfoinfo_file;
+    static std::ofstream poststitching_pfoinfo_file;
+    static int CALL_NUMBER;
+    // ****
+
     /**
      *  @brief  PfoAssociation class
      */
@@ -109,6 +115,11 @@ private:
         const pandora::PfoList &inputPfoList, const PfoToLArTPCMap &pfoToLArTPCMap, ThreeDPointingClusterMap &pointingClusterMap) const;
 
     typedef std::unordered_map<const pandora::LArTPC *, pandora::PfoList> LArTPCToPfoMap;
+      
+    // ** DEBUG/VALIDATION **
+    void PrintPfoInfo(const LArTPCToPfoMap& larTPCToPfoMap, const ThreeDPointingClusterMap& pointingClusterMap) const;
+    void PrintPfoInfo(const PfoToFloatMap& stitchedPfosToX0Map) const;
+    // ****
 
     /**
      *  @brief  Build a list of Pfos for each tpc
