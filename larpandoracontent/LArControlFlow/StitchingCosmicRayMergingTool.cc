@@ -15,6 +15,7 @@
 #include "larpandoracontent/LArHelpers/LArStitchingHelper.h"
 
 #include "larpandoracontent/LArObjects/LArThreeDSlidingFitResult.h"
+#include <cstddef>
 
 #include "larpandoracontent/LArControlFlow/StitchingCosmicRayMergingTool.h"
 
@@ -85,143 +86,18 @@ void StitchingCosmicRayMergingTool::Run(const MasterAlgorithm *const pAlgorithm,
     PfoMergeMap pfoOrderedMerges;
     this->OrderPfoMerges(pfoToLArTPCMap, pointingClusterMap, pfoSelectedMerges, pfoOrderedMerges);
 
-    this->StitchPfos(pAlgorithm, pointingClusterMap, pfoOrderedMerges, pfoToLArTPCMap, stitchedPfosToX0Map);
-
     // ** DEBUG/VALIDATION **
     // PRINT PFO INFO POST-STITCHING
-    this->PrintPfoInfo(stitchedPfosToX0Map);
+    this->PrintPostStitchingPfoInfo(pfoOrderedMerges, pointingClusterMap);
     // ****
+
+    this->StitchPfos(pAlgorithm, pointingClusterMap, pfoOrderedMerges, pfoToLArTPCMap, stitchedPfosToX0Map);
+
 }
 
 // ** DEBUG/VALIDATION**
 //------------------------------------------------------------------------------------------------------------------------------------------
-void StitchingCosmicRayMergingTool::PrintPfoInfo(const PfoToFloatMap& stitchedPfosToX0Map) const
-{
-      
-  if(!poststitching_pfoinfo_file.is_open())
-  {
-    std::cout << "Warning: prestitching_pfoinfo_file not open \n";
-    return;
-  }
-
-
-  for (const auto & pair : stitchedPfosToX0Map) 
-  {
-    auto pfo = pair.first;
-    auto x0 = pair.second;
-
-
-    ClusterList clusters3D;
-    LArPfoHelper::GetThreeDClusterList(pfo, clusters3D);
-    auto nof_calohits = clusters3D.front()->GetNCaloHits();
-    
-    if (clusters3D.empty()  || (nof_calohits < 5)) continue;
-
-
-    const LArTPC *const pFirstLArTPC(this->GetPandora().GetGeometry()->GetLArTPCMap().begin()->second);
-
-
-    const ThreeDSlidingFitResult slidingFitResult(clusters3D.front(), 5, pFirstLArTPC->GetWirePitchW());
-    
-    CartesianVector end_point1 = slidingFitResult.GetGlobalMinLayerPosition();
-    CartesianVector end_point2 = slidingFitResult.GetGlobalMaxLayerPosition();
-
-
-    // MC INFO *************************************
-
-
-    CaloHitList caloHitList3D;
-    LArPfoHelper::GetCaloHits(pfo, TPC_3D, caloHitList3D);
-
-
-    Uid the_main = nullptr;
-    float the_main_vertexX = -999.;
-    float the_main_vertexY = -999.;
-    float the_main_vertexZ = -999.;
-
-
-    std::map<Uid, int> MCParticleToHitCounter;
-    std::map<Uid, float> MCParticleToVertexX;
-    std::map<Uid, float> MCParticleToVertexY;
-    std::map<Uid, float> MCParticleToVertexZ;
-
-
-    for (const auto& hit : caloHitList3D)
-    {
-      // mc particle -> contribution to the hit
-      auto map = hit->GetMCParticleWeightMap();
-      float max_contrib = 0.;
-
-
-      Uid mc_max_contrib;
-      float vertexX_mc_max_contrib = -999.;
-      float vertexY_mc_max_contrib = -999.;
-      float vertexZ_mc_max_contrib = -999.;
-
-
-      for(auto const &[this_mc, contrib] : map)
-      {
-       if(max_contrib < contrib) {
-         mc_max_contrib = this_mc->GetUid();
-         vertexX_mc_max_contrib = this_mc->GetVertex().GetX();
-         vertexY_mc_max_contrib = this_mc->GetVertex().GetY();
-         vertexZ_mc_max_contrib = this_mc->GetVertex().GetZ();
-         max_contrib = contrib;
-       }
-      }
-       // at the end of this loop we know the mc particle
-       // that constribuited the most to this hit and 
-       // store its relevant info
-      if(MCParticleToHitCounter.count(mc_max_contrib)==0)
-      {
-        MCParticleToHitCounter[mc_max_contrib] = 0;
-        MCParticleToVertexX[mc_max_contrib] = vertexX_mc_max_contrib;
-        MCParticleToVertexY[mc_max_contrib] = vertexY_mc_max_contrib;
-        MCParticleToVertexZ[mc_max_contrib] = vertexZ_mc_max_contrib;
-      }
-      MCParticleToHitCounter[mc_max_contrib]++; 
-    }
-
-
-    int max_counts = 0;
-    // find the mc particle that cosntriuited the most
-    // to all pfo hits
-    for (auto const &[mc_uid, counts] : MCParticleToHitCounter)
-    {
-      if(counts > max_counts)
-      {
-        the_main = mc_uid;
-        the_main_vertexX = MCParticleToVertexX[mc_uid];
-        the_main_vertexY = MCParticleToVertexY[mc_uid];
-        the_main_vertexZ = MCParticleToVertexZ[mc_uid];
-        max_counts = counts;
-      }
-    }
-
-
-    // MC INFO *************************************
-    
-    poststitching_pfoinfo_file
-      << "{ \"CALL\" : " << CALL_NUMBER
-      << ", \"mc_particle_uid\" : " << "\"" << the_main << "\""
-      << ", \"mc_vertex_x\" : " << the_main_vertexX
-      << ", \"mc_vertex_y\" : " << the_main_vertexY
-      << ", \"mc_vertex_z\" : " << the_main_vertexZ
-      << ", \"pfo\" : " << "\"" << pfo << "\""
-      << ", \"x0\" : " << x0
-      << ", \"nof_calohits\" : " << nof_calohits
-      << ", \"end_point1_x\" : " << end_point1.GetX()
-      << ", \"end_point1_y\" : " << end_point1.GetY()
-      << ", \"end_point1_z\" : " << end_point1.GetZ()
-      << ", \"end_point2_x\" : " << end_point2.GetX()
-      << ", \"end_point2_y\" : " << end_point2.GetY()
-      << ", \"end_point2_z\" : " << end_point2.GetZ()
-      << "},\n";
-  }
-}
-
-
-//------------------------------------------------------------------------------------------------------------------------------------------
+// version: Aug 25, 2026
 void StitchingCosmicRayMergingTool::PrintPfoInfo(const LArTPCToPfoMap& larTPCToPfoMap, const ThreeDPointingClusterMap& pointingClusterMap) const 
 {
       
@@ -231,7 +107,6 @@ void StitchingCosmicRayMergingTool::PrintPfoInfo(const LArTPCToPfoMap& larTPCToP
     return;
   }
 
-
   for (const auto & pair : larTPCToPfoMap)
   {
     auto tpc = pair.first->GetLArTPCVolumeId();
@@ -240,8 +115,8 @@ void StitchingCosmicRayMergingTool::PrintPfoInfo(const LArTPCToPfoMap& larTPCToP
       ThreeDPointingClusterMap::const_iterator iter1 = pointingClusterMap.find(pfo_in_TPC);
       if (iter1 == pointingClusterMap.end() ) continue;
       
+      // reco clusters inner ourter vertices
       const LArPointingCluster &pointingCluster(iter1->second);
-      
       const LArPointingCluster::Vertex inner = pointingCluster.GetInnerVertex();
       const LArPointingCluster::Vertex outer = pointingCluster.GetOuterVertex();
       
@@ -250,6 +125,7 @@ void StitchingCosmicRayMergingTool::PrintPfoInfo(const LArTPCToPfoMap& larTPCToP
       
       ClusterList clusters3D;
       LArPfoHelper::GetThreeDClusterList(pfo_in_TPC, clusters3D);
+      if (clusters3D.empty()) continue;
       auto nof_calohits = clusters3D.front()->GetNCaloHits(); 
       
       const pandora::Vertex *vertex = *pfo_in_TPC_vertex;
@@ -263,41 +139,23 @@ void StitchingCosmicRayMergingTool::PrintPfoInfo(const LArTPCToPfoMap& larTPCToP
       double outerY  = outer.GetPosition().GetY();
       double outerZ  = outer.GetPosition().GetZ();
       
-      // MC INFO *************************************
-
-
+      // calohits info 
       CaloHitList caloHitList3D;
       LArPfoHelper::GetCaloHits(pfo_in_TPC, TPC_3D, caloHitList3D);
-
-
-      Uid the_main = nullptr;
-      float the_main_vertexX = -999.;
-      float the_main_vertexY = -999.;
-      float the_main_vertexZ = -999.;
-
-
-      std::map<Uid, int> MCParticleToHitCounter;
-      std::map<Uid, float> MCParticleToVertexX;
-      std::map<Uid, float> MCParticleToVertexY;
-      std::map<Uid, float> MCParticleToVertexZ;
-
 
       for (const auto& hit : caloHitList3D)
       {
         // mc particle -> contribution to the hit
         auto map = hit->GetMCParticleWeightMap();
         float max_contrib = 0.;
-
-
-        Uid mc_max_contrib;
+        Uid mc_max_contrib = nullptr;
         float vertexX_mc_max_contrib = -999.;
         float vertexY_mc_max_contrib = -999.;
         float vertexZ_mc_max_contrib = -999.;
 
-
         for(auto const &[this_mc, contrib] : map)
         {
-         if(max_contrib < contrib) {
+         if(contrib > max_contrib) {
            mc_max_contrib = this_mc->GetUid();
            vertexX_mc_max_contrib = this_mc->GetVertex().GetX();
            vertexY_mc_max_contrib = this_mc->GetVertex().GetY();
@@ -308,61 +166,129 @@ void StitchingCosmicRayMergingTool::PrintPfoInfo(const LArTPCToPfoMap& larTPCToP
          // at the end of this loop we know the mc particle
          // that constribuited the most to this hit and 
          // store its relevant info
-        if(MCParticleToHitCounter.count(mc_max_contrib)==0)
-        {
-          MCParticleToHitCounter[mc_max_contrib] = 0;
-          MCParticleToVertexX[mc_max_contrib] = vertexX_mc_max_contrib;
-          MCParticleToVertexY[mc_max_contrib] = vertexY_mc_max_contrib;
-          MCParticleToVertexZ[mc_max_contrib] = vertexZ_mc_max_contrib;
-        }
-        MCParticleToHitCounter[mc_max_contrib]++; 
+        const long the_main = (mc_max_contrib != nullptr) ? reinterpret_cast<intptr_t>(mc_max_contrib) : 0;
+
+        const double caloHitX = hit->GetPositionVector().GetX();
+        const double caloHitY = hit->GetPositionVector().GetY();
+        const double caloHitZ = hit->GetPositionVector().GetZ();
+
+        prestitching_pfoinfo_file
+          << "{ \"CALL\" : " << CALL_NUMBER
+          << ", \"tpc\" : " << "\"" << tpc << "\""
+          << ", \"pfo\" : " << "\"" << pfo_in_TPC << "\""
+          << ", \"nof_calohits\" : " << nof_calohits
+          << ", \"mc_particle_uid\" : " << the_main
+          << ", \"mc_vertex_x\" : " << vertexX_mc_max_contrib
+          << ", \"mc_vertex_y\" : " << vertexY_mc_max_contrib
+          << ", \"mc_vertex_z\" : " << vertexZ_mc_max_contrib
+          << ", \"vertexX\" : " << vertexX
+          << ", \"vertexY\" : " << vertexY
+          << ", \"vertexZ\" : " << vertexZ
+          << ", \"innerX\" : " << innerX
+          << ", \"innerY\" : " << innerY
+          << ", \"innerZ\" : " << innerZ
+          << ", \"outerX\" : " << outerX
+          << ", \"outerY\" : " << outerY
+          << ", \"outerZ\" : " << outerZ
+          << ", \"CaloHitX\" : " << caloHitX
+          << ", \"CaloHitY\" : " << caloHitY
+          << ", \"CaloHitZ\" : " << caloHitZ
+          << "},\n";
       }
-
-
-      int max_counts = 0;
-      // find the mc particle that cosntriuited the most
-      // to all pfo hits
-      for (auto const &[mc_uid, counts] : MCParticleToHitCounter)
-      {
-        if(counts > max_counts)
-        {
-          the_main = mc_uid;
-          the_main_vertexX = MCParticleToVertexX[mc_uid];
-          the_main_vertexY = MCParticleToVertexY[mc_uid];
-          the_main_vertexZ = MCParticleToVertexZ[mc_uid];
-          max_counts = counts;
-        }
-      }
-
-
-      // MC INFO *************************************
-      
-      prestitching_pfoinfo_file
-        << "{ \"CALL\" : " << CALL_NUMBER
-        << ", \"tpc\" : " << "\"" << tpc << "\""
-        << ", \"pfo\" : " << "\"" << pfo_in_TPC << "\""
-        << ", \"nof_calohits\" : " << nof_calohits
-        << ", \"mc_particle_uid\" : " << "\"" << the_main << "\""
-        << ", \"mc_vertex_x\" : " << the_main_vertexX
-        << ", \"mc_vertex_y\" : " << the_main_vertexY
-        << ", \"mc_vertex_z\" : " << the_main_vertexZ
-        << ", \"vertexX\" : " << vertexX
-        << ", \"vertexY\" : " << vertexY
-        << ", \"vertexZ\" : " << vertexZ
-        << ", \"innerX\" : " << innerX
-        << ", \"innerY\" : " << innerY
-        << ", \"innerZ\" : " << innerZ
-        << ", \"outerX\" : " << outerX
-        << ", \"outerY\" : " << outerY
-        << ", \"outerZ\" : " << outerZ
-        << "},\n";
     }
-
-
   }
 }
 //------------------------------------------------------------------------------------------------------------------------------------------
-// ****
+// version: Aug 25, 2026
+void StitchingCosmicRayMergingTool::PrintPostStitchingPfoInfo(const PfoMergeMap &pfoOrderedMerges,
+    const ThreeDPointingClusterMap &pointingClusterMap) const
+{
+    if (!poststitching_pfoinfo_file.is_open())
+    {
+        std::cout << "Warning: poststitching_pfoinfo_file not open \n";
+        return;
+    }
+
+    PfoVector pfoVectorToEnlarge;
+    for (const auto &mapEntry : pfoOrderedMerges)
+        pfoVectorToEnlarge.push_back(mapEntry.first);
+    std::sort(pfoVectorToEnlarge.begin(), pfoVectorToEnlarge.end(), LArPfoHelper::SortByNHits);
+
+    for (const ParticleFlowObject *const pPfoToEnlarge : pfoVectorToEnlarge)
+    {
+        const PfoList &pfoList(pfoOrderedMerges.at(pPfoToEnlarge));
+
+        // Include pPfoToEnlarge itself alongside everything being merged into it,
+        // so a row with pfo == pPfoToEnlarge is written too.
+        PfoList allPfos(pfoList);
+        allPfos.push_back(pPfoToEnlarge);
+
+        for (const ParticleFlowObject *const pPfo : allPfos)
+        {
+            ThreeDPointingClusterMap::const_iterator iter1 = pointingClusterMap.find(pPfo);
+            if (iter1 == pointingClusterMap.end()) continue;
+
+            const LArPointingCluster &pointingCluster(iter1->second);
+            const LArPointingCluster::Vertex inner = pointingCluster.GetInnerVertex();
+            const LArPointingCluster::Vertex outer = pointingCluster.GetOuterVertex();
+
+            const double innerX = inner.GetPosition().GetX();
+            const double innerY = inner.GetPosition().GetY();
+            const double innerZ = inner.GetPosition().GetZ();
+            const double outerX = outer.GetPosition().GetX();
+            const double outerY = outer.GetPosition().GetY();
+            const double outerZ = outer.GetPosition().GetZ();
+
+            ClusterList clusters3D;
+            LArPfoHelper::GetThreeDClusterList(pPfo, clusters3D);
+            if (clusters3D.empty()) continue;
+            const auto nof_calohits = clusters3D.front()->GetNCaloHits();
+
+            CaloHitList caloHitList3D;
+            LArPfoHelper::GetCaloHits(pPfo, TPC_3D, caloHitList3D);
+
+            for (const auto &hit : caloHitList3D)
+            {
+                auto map = hit->GetMCParticleWeightMap();
+                float max_contrib = 0.;
+                Uid mc_max_contrib = nullptr;
+
+                for (auto const &[this_mc, contrib] : map)
+                {
+                    if (contrib > max_contrib)
+                    {
+                        mc_max_contrib = this_mc->GetUid();
+                        max_contrib = contrib;
+                    }
+                }
+
+                const long mc_uid = (mc_max_contrib != nullptr)
+                    ? reinterpret_cast<intptr_t>(mc_max_contrib) : 0;
+
+                const double caloHitX = hit->GetPositionVector().GetX();
+                const double caloHitY = hit->GetPositionVector().GetY();
+                const double caloHitZ = hit->GetPositionVector().GetZ();
+
+                poststitching_pfoinfo_file
+                    << "{ \"CALL\" : " << CALL_NUMBER
+                    << ", \"pfo\" : \"" << pPfo << "\""
+                    << ", \"pPfoToEnlarge\" : \"" << pPfoToEnlarge << "\""
+                    << ", \"mc_particle_uid\" : " << mc_uid
+                    << ", \"nof_calohits\" : " << nof_calohits
+                    << ", \"CaloHitX\" : " << caloHitX
+                    << ", \"CaloHitY\" : " << caloHitY
+                    << ", \"CaloHitZ\" : " << caloHitZ
+                    << ", \"innerX\" : " << innerX
+                    << ", \"innerY\" : " << innerY
+                    << ", \"innerZ\" : " << innerZ
+                    << ", \"outerX\" : " << outerX
+                    << ", \"outerY\" : " << outerY
+                    << ", \"outerZ\" : " << outerZ
+                    << "},\n";
+            }
+        }
+    }
+}
 
 //------------------------------------------------------------------------------------------------------------------------------------------
 

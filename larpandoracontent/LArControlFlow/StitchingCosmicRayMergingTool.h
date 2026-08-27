@@ -115,11 +115,6 @@ private:
         const pandora::PfoList &inputPfoList, const PfoToLArTPCMap &pfoToLArTPCMap, ThreeDPointingClusterMap &pointingClusterMap) const;
 
     typedef std::unordered_map<const pandora::LArTPC *, pandora::PfoList> LArTPCToPfoMap;
-      
-    // ** DEBUG/VALIDATION **
-    void PrintPfoInfo(const LArTPCToPfoMap& larTPCToPfoMap, const ThreeDPointingClusterMap& pointingClusterMap) const;
-    void PrintPfoInfo(const PfoToFloatMap& stitchedPfosToX0Map) const;
-    // ****
 
     /**
      *  @brief  Build a list of Pfos for each tpc
@@ -158,6 +153,11 @@ private:
         PfoAssociationMatrix &pfoAssociationMatrix) const;
 
     typedef std::unordered_map<const pandora::ParticleFlowObject *, pandora::PfoList> PfoMergeMap;
+      
+    // ** DEBUG/VALIDATION **
+    void PrintPfoInfo(const LArTPCToPfoMap& larTPCToPfoMap, const ThreeDPointingClusterMap& pointingClusterMap) const;
+    void PrintPostStitchingPfoInfo(const PfoMergeMap &pfoOrderedMerges,const ThreeDPointingClusterMap &pointingClusterMap) const;
+    // ****
 
     /**
      *  @brief  Select the best associations between Pfos; create a mapping between associated Pfos, handling any ambiguities
